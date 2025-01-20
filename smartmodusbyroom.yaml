@@ -1,6 +1,6 @@
 blueprint:
-  name: Smart Light Automation for Room
-  description: Convert OpenHAB light automation to Home Assistant
+  name: Smart Modus Control by Room
+  description: 1st Convert from OpenHAB light automation to Home Assistant
   domain: automation
   input:
     room_name:
