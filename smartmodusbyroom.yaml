@@ -1,198 +1,114 @@
 blueprint:
-  name: Smart Modus Control by room
-  description: Intelligente Lichtsteuerung mit verschiedenen Modi (Standard, Automatisch, Putzen, Alarm) und circadianer Anpassung
+  name: Smart Light Automation for Room
+  description: Convert OpenHAB light automation to Home Assistant
   domain: automation
   input:
     room_name:
-      name: Raumname
-      description: Name des Raums für die Lichtsteuerung
+      name: Room Name
+      description: Name of the room
+      default: Kueche
+    smart_mode:
+      name: Smart Mode
+      description: Smart mode selector
       selector:
-        text:
+        input_select.entity_id:
     motion_sensor:
-      name: Bewegungsmelder
-      description: Bewegungsmelder des Raums
+      name: Motion Sensor
+      description: Motion sensor in the room
       selector:
         entity:
           domain: binary_sensor
           device_class: motion
     illuminance_sensor:
-      name: Helligkeitssensor
-      description: Helligkeitssensor des Raums
+      name: Illuminance Sensor
+      description: Sensor to measure illuminance
       selector:
         entity:
           domain: sensor
           device_class: illuminance
     main_light:
-      name: Hauptlicht
-      description: Hauptbeleuchtung des Raums
+      name: Main Light
+      description: Main light group
       selector:
-        target:
-          entity:
-            domain: light
+        entity:
+          domain: light
     ambient_light:
-      name: Ambientelicht
-      description: Optionale Ambientebeleuchtung
-      selector:
-        target:
-          entity:
-            domain: light
-      default: []
-    smart_mode:
-      name: Smart Modus Auswahl
-      description: Input Select für den Smart Modus
+      name: Ambient Light
+      description: Ambient light group
       selector:
         entity:
-          domain: input_select
-    time_of_day:
-      name: Tageszeit Status
-      description: Sensor für aktuelle Tageszeit (BED, NIGHT, MORNING, EVENING, DAY)
-      selector:
-        entity:
-          domain: sensor
+          domain: light
     illuminance_threshold:
-      name: Helligkeitsschwelle
-      description: Schwellwert für automatische Beleuchtung
+      name: Illuminance Threshold
+      description: Threshold for activating lights
       default: 75
       selector:
         number:
           min: 0
-          max: 100
-          unit_of_measurement: "%"
-    timer_minutes:
-      name: Timer Dauer
-      description: Ausschaltverzögerung in Minuten
+          max: 1000
+          step: 1
+    timer_duration:
+      name: Timer Duration
+      description: Timer duration in minutes
       default: 10
       selector:
         number:
           min: 1
           max: 60
-          unit_of_measurement: min
+          step: 1
+    logging:
+      name: Enable Logging
+      description: Enable debug logs
+      default: false
+      selector:
+        boolean:
 
 variables:
-  room_name: !input room_name
+  room: !input room_name
+  smart_mode: !input smart_mode
+  motion_sensor: !input motion_sensor
+  illuminance_sensor: !input illuminance_sensor
+  main_light: !input main_light
+  ambient_light: !input ambient_light
   illuminance_threshold: !input illuminance_threshold
-  timer_minutes: !input timer_minutes
+  timer_duration: !input timer_duration
+  logging: !input logging
 
 trigger:
   - platform: state
     entity_id: !input motion_sensor
-  - platform: state
-    entity_id: !input smart_mode
-  - platform: state
+    from: "off"
+    to: "on"
+
+condition:
+  - condition: numeric_state
     entity_id: !input illuminance_sensor
-  - platform: state
-    entity_id: !input time_of_day
+    below: !input illuminance_threshold
 
 action:
-  - variables:
-      smart_mode: "{{ states(input.smart_mode) }}"
-      motion_state: "{{ states(input.motion_sensor) }}"
-      illuminance: "{{ states(input.illuminance_sensor) | float }}"
-      time_of_day: "{{ states(input.time_of_day) }}"
-      
   - choose:
-      # Standard Modus
       - conditions:
-          - condition: template
-            value_template: "{{ smart_mode == 'standard' and motion_state == 'off' }}"
-        sequence:
-          - delay:
-              minutes: "{{ timer_minutes * 3 }}"
-          - service: light.turn_off
-            target: !input main_light
-          - service: light.turn_off
-            target: !input ambient_light
-            enabled: "{{ not not input.ambient_light }}"
-
-      # Automatik Modus
-      - conditions:
-          - condition: template
-            value_template: "{{ smart_mode == 'automatisch' and illuminance <= illuminance_threshold }}"
-        sequence:
-          - choose:
-              # Schlafenszeit
-              - conditions:
-                  - condition: template
-                    value_template: "{{ time_of_day == 'BED' }}"
-                sequence:
-                  - service: light.turn_on
-                    target: !input main_light
-                    data:
-                      color_temp: 2000
-                      brightness_pct: 30
-              
-              # Nachtzeit
-              - conditions:
-                  - condition: template
-                    value_template: "{{ time_of_day == 'NIGHT' }}"
-                sequence:
-                  - service: light.turn_on
-                    target: !input main_light
-                    data:
-                      color_temp: 2000
-                      brightness_pct: 10
-              
-              # Morgenzeit
-              - conditions:
-                  - condition: template
-                    value_template: "{{ time_of_day == 'MORNING' }}"
-                sequence:
-                  - service: light.turn_on
-                    target: !input main_light
-                    data:
-                      color_temp: 2000
-                      brightness_pct: 100
-              
-              # Abendzeit
-              - conditions:
-                  - condition: template
-                    value_template: "{{ time_of_day == 'EVENING' }}"
-                sequence:
-                  - service: light.turn_on
-                    target: !input main_light
-                    data:
-                      color_temp: 2000
-                      brightness_pct: 100
-              
-              # Tageslicht (Standard)
-              default:
-                - service: light.turn_on
-                  target: !input main_light
-                  data:
-                    color_temp: 2000
-                    brightness_pct: 240
-          
-          - delay:
-              minutes: "{{ timer_minutes }}"
-          - service: light.turn_off
-            target: !input main_light
-
-      # Putzen Modus
-      - conditions:
-          - condition: template
-            value_template: "{{ smart_mode == 'putzen' }}"
+          - condition: state
+            entity_id: !input smart_mode
+            state: "automatisch"
         sequence:
           - service: light.turn_on
-            target: !input main_light
+            target:
+              entity_id: !input main_light
             data:
-              color_temp: 2000
-              brightness_pct: 240
-          - delay:
-              minutes: "{{ timer_minutes }}"
-          - service: light.turn_off
-            target: !input main_light
-
-      # Alarm Modus
+              brightness_pct: 100
       - conditions:
-          - condition: template
-            value_template: "{{ smart_mode == 'alarm' }}"
+          - condition: state
+            entity_id: !input smart_mode
+            state: "putzen"
         sequence:
-          - service: notify.notify
+          - service: light.turn_on
+            target:
+              entity_id: !input main_light
             data:
-              message: "Bewegungsmelder in {{ room_name }} hat ausgelöst. Bewegung im Haus."
-              title: "Bewegungsalarm"
-              data:
-                priority: 2
-
-mode: restart
-max_exceeded: silent
+              brightness_pct: 100
+  - delay:
+      minutes: !input timer_duration
+  - service: light.turn_off
+    target:
+      entity_id: !input main_light
