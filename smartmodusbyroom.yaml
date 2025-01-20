@@ -1,0 +1,198 @@
+blueprint:
+  name: Smart Modus Control by room
+  description: Intelligente Lichtsteuerung mit verschiedenen Modi (Standard, Automatisch, Putzen, Alarm) und circadianer Anpassung
+  domain: automation
+  input:
+    room_name:
+      name: Raumname
+      description: Name des Raums für die Lichtsteuerung
+      selector:
+        text:
+    motion_sensor:
+      name: Bewegungsmelder
+      description: Bewegungsmelder des Raums
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: motion
+    illuminance_sensor:
+      name: Helligkeitssensor
+      description: Helligkeitssensor des Raums
+      selector:
+        entity:
+          domain: sensor
+          device_class: illuminance
+    main_light:
+      name: Hauptlicht
+      description: Hauptbeleuchtung des Raums
+      selector:
+        target:
+          entity:
+            domain: light
+    ambient_light:
+      name: Ambientelicht
+      description: Optionale Ambientebeleuchtung
+      selector:
+        target:
+          entity:
+            domain: light
+      default: []
+    smart_mode:
+      name: Smart Modus Auswahl
+      description: Input Select für den Smart Modus
+      selector:
+        entity:
+          domain: input_select
+    time_of_day:
+      name: Tageszeit Status
+      description: Sensor für aktuelle Tageszeit (BED, NIGHT, MORNING, EVENING, DAY)
+      selector:
+        entity:
+          domain: sensor
+    illuminance_threshold:
+      name: Helligkeitsschwelle
+      description: Schwellwert für automatische Beleuchtung
+      default: 75
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+    timer_minutes:
+      name: Timer Dauer
+      description: Ausschaltverzögerung in Minuten
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: min
+
+variables:
+  room_name: !input room_name
+  illuminance_threshold: !input illuminance_threshold
+  timer_minutes: !input timer_minutes
+
+trigger:
+  - platform: state
+    entity_id: !input motion_sensor
+  - platform: state
+    entity_id: !input smart_mode
+  - platform: state
+    entity_id: !input illuminance_sensor
+  - platform: state
+    entity_id: !input time_of_day
+
+action:
+  - variables:
+      smart_mode: "{{ states(input.smart_mode) }}"
+      motion_state: "{{ states(input.motion_sensor) }}"
+      illuminance: "{{ states(input.illuminance_sensor) | float }}"
+      time_of_day: "{{ states(input.time_of_day) }}"
+      
+  - choose:
+      # Standard Modus
+      - conditions:
+          - condition: template
+            value_template: "{{ smart_mode == 'standard' and motion_state == 'off' }}"
+        sequence:
+          - delay:
+              minutes: "{{ timer_minutes * 3 }}"
+          - service: light.turn_off
+            target: !input main_light
+          - service: light.turn_off
+            target: !input ambient_light
+            enabled: "{{ not not input.ambient_light }}"
+
+      # Automatik Modus
+      - conditions:
+          - condition: template
+            value_template: "{{ smart_mode == 'automatisch' and illuminance <= illuminance_threshold }}"
+        sequence:
+          - choose:
+              # Schlafenszeit
+              - conditions:
+                  - condition: template
+                    value_template: "{{ time_of_day == 'BED' }}"
+                sequence:
+                  - service: light.turn_on
+                    target: !input main_light
+                    data:
+                      color_temp: 2000
+                      brightness_pct: 30
+              
+              # Nachtzeit
+              - conditions:
+                  - condition: template
+                    value_template: "{{ time_of_day == 'NIGHT' }}"
+                sequence:
+                  - service: light.turn_on
+                    target: !input main_light
+                    data:
+                      color_temp: 2000
+                      brightness_pct: 10
+              
+              # Morgenzeit
+              - conditions:
+                  - condition: template
+                    value_template: "{{ time_of_day == 'MORNING' }}"
+                sequence:
+                  - service: light.turn_on
+                    target: !input main_light
+                    data:
+                      color_temp: 2000
+                      brightness_pct: 100
+              
+              # Abendzeit
+              - conditions:
+                  - condition: template
+                    value_template: "{{ time_of_day == 'EVENING' }}"
+                sequence:
+                  - service: light.turn_on
+                    target: !input main_light
+                    data:
+                      color_temp: 2000
+                      brightness_pct: 100
+              
+              # Tageslicht (Standard)
+              default:
+                - service: light.turn_on
+                  target: !input main_light
+                  data:
+                    color_temp: 2000
+                    brightness_pct: 240
+          
+          - delay:
+              minutes: "{{ timer_minutes }}"
+          - service: light.turn_off
+            target: !input main_light
+
+      # Putzen Modus
+      - conditions:
+          - condition: template
+            value_template: "{{ smart_mode == 'putzen' }}"
+        sequence:
+          - service: light.turn_on
+            target: !input main_light
+            data:
+              color_temp: 2000
+              brightness_pct: 240
+          - delay:
+              minutes: "{{ timer_minutes }}"
+          - service: light.turn_off
+            target: !input main_light
+
+      # Alarm Modus
+      - conditions:
+          - condition: template
+            value_template: "{{ smart_mode == 'alarm' }}"
+        sequence:
+          - service: notify.notify
+            data:
+              message: "Bewegungsmelder in {{ room_name }} hat ausgelöst. Bewegung im Haus."
+              title: "Bewegungsalarm"
+              data:
+                priority: 2
+
+mode: restart
+max_exceeded: silent
