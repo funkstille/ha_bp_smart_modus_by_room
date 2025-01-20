@@ -8,10 +8,11 @@ blueprint:
       description: Name of the room
       default: Kueche
     smart_mode:
-      name: Smart Mode
-      description: Smart mode selector (e.g., 'standart', 'automatisch', 'putzen', etc.)
+      name: Smart Modus Auswahl
+      description: Input Select für den Smart Modus
       selector:
-        text: {}
+        entity:
+          domain: input_select
     motion_sensor:
       name: Motion Sensor
       description: Motion sensor in the room
